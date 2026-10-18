@@ -2,7 +2,7 @@
 
 ต้นแบบสำหรับ Technical Assessment ของ Partilon: บริการ Customer และ Order แยกกัน มี Kong เป็น API Gateway และมี Agent ที่ทำงานร่วมกันผ่าน A2A
 
-## สถาปัตยกรรม
+## Architecture
 
 ```mermaid
 flowchart LR
@@ -29,7 +29,7 @@ flowchart LR
 
 ทุกบริการเขียนด้วย Express + TypeScript Customer API และ Order API ใช้ PostgreSQL คนละ database คนละ role (แต่อยู่ใน container เดียวกัน) ส่วน Agent ไม่มีสิทธิ์เข้าถึงฐานข้อมูลโดยตรง ต้องเรียกผ่าน API เท่านั้น
 
-## เริ่มใช้งาน
+## Getting Started
 
 ต้องมี Docker Desktop (รองรับ Compose) และพอร์ต `8000` ว่างอยู่
 
@@ -64,7 +64,7 @@ curl.exe -X POST http://localhost:8000/api/v1/agent/query -H "apikey: demo-clien
 
 สัญญา API ฉบับเต็มอยู่ที่ [openapi/openapi.yaml](openapi/openapi.yaml) และมี [Postman collection](postman/Partilon-Assessment.postman_collection.json) สำหรับลองตามสถานการณ์สาธิต
 
-## การทำงานของ Agent
+## How the Agent Works
 
 Coordinator ทำงานเป็น 4 ขั้น: Plan → Discover → Execute → Respond
 
@@ -87,14 +87,14 @@ Coordinator ทำงานเป็น 4 ขั้น: Plan → Discover → Ex
 
 A2A ใช้เฉพาะการส่งงานระหว่าง Agent ส่วนการเรียก REST API คือการอ่านข้อมูลจากระบบ ไม่ใช่การส่งงานระหว่าง Agent
 
-## ความปลอดภัยและ traffic control
+## Security and Traffic Control
 
 - ทุก route ใน Kong ต้องมี API key ใน header `apikey`
 - มี 3 consumer แยกตามบทบาท: `demo-client-key` (client), `coordinator-a2a-key` (Coordinator เรียก Agent) และ `agent-internal-key` (Agent เรียก managed APIs)
 - แต่ละ consumer จำกัด 30 requests ต่อนาที (rate limiting แบบ local)
 - ทดสอบได้ เช่น เรียกโดยไม่ส่ง key (`curl.exe -i http://localhost:8000/api/v1/customers/C001`) จะได้ `401` และเรียกเกิน 30 ครั้งต่อนาทีจะได้ `429`
 
-## การจัดการเมื่อเกิดข้อผิดพลาด
+## Failure Handling
 
 - Business API ตอบ `404` เมื่อไม่พบ record
 - Agent query ตอบ `404` เมื่อไม่พบข้อมูล
@@ -104,7 +104,7 @@ A2A ใช้เฉพาะการส่งงานระหว่าง Age
 
 ลองดูได้ด้วยการ `docker compose stop order-api` แล้วถาม `Find customer C001 and tell me their latest order status` ควรได้ข้อมูล customer กลับมาพร้อม `status: "partial"` และ issue ว่าดึง order ไม่ได้ เสร็จแล้วใช้ `docker compose start order-api` เพื่อคืนระบบ
 
-## ไล่ตาม request (observability)
+## Observability and Request Tracing
 
 Kong สร้าง `X-Correlation-ID` ให้อัตโนมัติ (หรือใช้ค่าที่ client ส่งมา) แล้วส่งต่อผ่าน Coordinator, A2A task และ API calls ทั้งหมด ค่าเดียวกันจะปรากฏใน response header และ log ทุกบริการ
 
@@ -116,7 +116,7 @@ docker compose logs -f kong coordinator customer-agent order-agent customer-api 
 
 จากนั้นค้น `trace-demo-001` ใน logs เพื่อดู request ตั้งแต่ Kong ผ่าน Coordinator, Agents ไปจนถึง API Kong access log แสดงเวลา, method, URI, status, เวลาที่ใช้ และ upstream ส่วน application log ใช้ Pino แบบ structured
 
-## โครงสร้างโฟลเดอร์
+## Project Structure
 
 - `services/` – Express APIs, Coordinator และ specialist Agents
 - `packages/shared/` – HTTP errors, request ID/logging, PostgreSQL pool และ A2A adapters
