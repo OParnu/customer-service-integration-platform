@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Partilon Customer Service Integration Platform",
-    "description": "Assessment scenarios for Customer/Order APIs, Kong access logs, authentication, and deterministic A2A orchestration.",
+    "description": "Assessment scenarios for Customer/Order APIs, Kong access logs, key authentication and route-level ACL authorization, and deterministic A2A orchestration.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -65,6 +65,15 @@
             "header": [{ "key": "apikey", "value": "{{a2aKey}}" }],
             "url": "{{baseUrl}}/a2a/order-agent/.well-known/agent-card.json"
           }
+        },
+        {
+          "name": "Forbidden: client key cannot access Agent Card (expect 403)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{apiKey}}" }],
+            "description": "The key is valid and authenticated as demo-client, but the public-client ACL group is not allowed on Agent routes.",
+            "url": "{{baseUrl}}/a2a/customer-agent/.well-known/agent-card.json"
+          }
         }
       ]
     },
@@ -84,6 +93,23 @@
               "raw": "{\n  \"query\": \"Find customer C001 and tell me their latest order status\"\n}",
               "options": { "raw": { "language": "json" } }
             },
+            "url": "{{baseUrl}}/api/v1/agent/query"
+          }
+        },
+        {
+          "name": "Customer and order through multiple Agents",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{apiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Show customer C001 and order O1001\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Should run the get-customer capability and then delegate get-order-by-id to the Order Agent. O1001 belongs to C001.",
             "url": "{{baseUrl}}/api/v1/agent/query"
           }
         },

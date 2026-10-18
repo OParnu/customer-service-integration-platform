@@ -30,6 +30,7 @@ paths:
                   meta: { $ref: '#/components/schemas/Meta' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/Unavailable' }
@@ -55,6 +56,7 @@ paths:
                   meta: { $ref: '#/components/schemas/Meta' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/Unavailable' }
@@ -98,6 +100,7 @@ paths:
                           hasMore: { type: boolean }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/Unavailable' }
   /api/v1/agent/query:
@@ -142,6 +145,7 @@ paths:
                   meta: { $ref: '#/components/schemas/AgentQueryMeta' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404':
           description: Requested record was not found, or the order does not belong to the requested customer
           content:
@@ -169,6 +173,10 @@ components:
       type: apiKey
       in: header
       name: apikey
+      description: >-
+        Kong authenticates the API key and then authorizes the identified consumer
+        against the ACL group allowed on the matched route. A valid key without
+        permission for that route receives 403.
   schemas:
     Customer:
       type: object
@@ -243,6 +251,8 @@ components:
           schema: { $ref: '#/components/schemas/ErrorEnvelope' }
     Unauthorized:
       description: Missing or invalid API key
+    Forbidden:
+      description: Valid API key, but its consumer group is not allowed to access this route
     NotFound:
       description: Resource not found
       content:

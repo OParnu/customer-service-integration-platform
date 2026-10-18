@@ -57,6 +57,37 @@ plugins:
       key_in_query: false
       key_in_body: false
 
+  # Route-level allow lists: only the named consumer groups may reach a route.
+  - name: acl
+    route: customers
+    config:
+      allow: [ public-client, internal-agent ]
+      hide_groups_header: true
+
+  - name: acl
+    route: orders
+    config:
+      allow: [ public-client, internal-agent ]
+      hide_groups_header: true
+
+  - name: acl
+    route: agent-query
+    config:
+      allow: [ public-client ]
+      hide_groups_header: true
+
+  - name: acl
+    route: customer-agent-a2a
+    config:
+      allow: [ coordinator ]
+      hide_groups_header: true
+
+  - name: acl
+    route: order-agent-a2a
+    config:
+      allow: [ coordinator ]
+      hide_groups_header: true
+
   - name: rate-limiting
     config:
       minute: 30
@@ -73,4 +104,13 @@ consumers:
   - username: coordinator-a2a
     keyauth_credentials:
       - key: coordinator-a2a-key
+
+# key-auth identifies the Consumer; the ACL plugin authorizes its group.
+acls:
+  - consumer: demo-client
+    group: public-client
+  - consumer: internal-agents
+    group: internal-agent
+  - consumer: coordinator-a2a
+    group: coordinator
 

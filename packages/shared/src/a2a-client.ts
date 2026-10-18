@@ -9,6 +9,10 @@ import {
 const a2aGatewayKey = process.env.A2A_GATEWAY_KEY ?? "coordinator-a2a-key";
 const agentCardCacheTtlMs = 5 * 60_000;
 const agentCardCache = new Map<string, { expiresAt: number; card: AgentCard }>();
+const parsedAgentCallTimeoutMs = Number(process.env.AGENT_CALL_TIMEOUT_MS ?? 10_000);
+const agentCallTimeoutMs = Number.isFinite(parsedAgentCallTimeoutMs) && parsedAgentCallTimeoutMs > 0
+  ? parsedAgentCallTimeoutMs
+  : 10_000;
 
 export interface AgentEndpoint {
   id: string;
@@ -34,7 +38,7 @@ export class AgentCallError extends Error {
 }
 
 function combinedSignal(requestSignal?: AbortSignal, sdkSignal?: AbortSignal | null): AbortSignal {
-  const signals = [requestSignal, sdkSignal, AbortSignal.timeout(5_000)].filter(
+  const signals = [requestSignal, sdkSignal, AbortSignal.timeout(agentCallTimeoutMs)].filter(
     (signal): signal is AbortSignal => signal != null,
   );
   return AbortSignal.any(signals);

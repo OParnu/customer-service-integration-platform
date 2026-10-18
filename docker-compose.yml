@@ -95,6 +95,7 @@ services:
       SERVICE_NAME: coordinator-agent
       LOG_LEVEL: ${LOG_LEVEL:-info}
       COORDINATOR_TIMEOUT_MS: ${COORDINATOR_TIMEOUT_MS:-25000}
+      AGENT_CALL_TIMEOUT_MS: ${AGENT_CALL_TIMEOUT_MS:-10000}
       CUSTOMER_AGENT_URL: http://kong:8000/a2a/customer-agent/
       ORDER_AGENT_URL: http://kong:8000/a2a/order-agent/
       A2A_GATEWAY_KEY: coordinator-a2a-key
