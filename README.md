@@ -251,7 +251,7 @@ docker compose logs --since 10m kong coordinator customer-agent order-agent cust
 - **Kong Gateway 3.9.4 (DB-less)** – เก็บ routes และ plugins ไว้ในไฟล์เดียว (`kong/kong.yml`) รีวิวง่ายและรันด้วย Compose ได้เลย ถ้าจะใช้งานจริงควรเทียบกับตัวเลือกอื่นอย่าง Apache APISIX ตามความถนัดของทีมและ plugin ที่ต้องใช้
 - **A2A JavaScript SDK 1.0.1** – ใช้ Agent Card และ task lifecycle
 - **Pino + Docker Compose** – structured logs ไป stdout และรัน stack ในเครื่อง
-- **ไม่ใช้ LLM framework** – การวางแผนเป็น TypeScript แบบ deterministic
+- **ไม่ใช้ LLM framework** – เป็น TypeScript แบบ deterministic
 
 ## Architecture Decisions
 
@@ -263,8 +263,8 @@ docker compose logs --since 10m kong coordinator customer-agent order-agent cust
 ## Assumptions
 
 - ประเมินและสาธิตบนเครื่องเดียวด้วย Docker Compose ข้อมูลทั้งหมดเป็น demo
-- ใช้ PostgreSQL container เดียวเพื่อลดภาระการตั้งค่า (แยกที่ระดับ database และ role)
-- คำถามอยู่ในขอบเขต customer/order lookup ตามตัวอย่างข้างต้น
+- ใช้ PostgreSQL container เดียวเพื่อลดการตั้งค่า 
+- คำถามอยู่ในขอบเขต customer/order lookup ตามตัวอย่าง
 - API keys และรหัสผ่านใน config เป็นค่า demo สำหรับ local เท่านั้น
 
 ## Known Limitations
@@ -272,14 +272,12 @@ docker compose logs --since 10m kong coordinator customer-agent order-agent cust
 - Coordinator ใช้กฎและ keyword ที่กำหนดไว้ จึงไม่เข้าใจคำถามทั่วไปนอกขอบเขต
 - มี Kong instance เดียวและ rate limit แบบ local ไม่มี quota ร่วมกันข้ามหลาย node
 - Customer DB และ Order DB อยู่ใน PostgreSQL instance เดียว จึงใช้ failure domain ร่วมกัน
-- Task state และ Agent Card cache อยู่ใน memory restart แล้วหาย และ cache อาจเก่าได้ถึง 5 นาที
 - Logs ดูได้จาก Docker stdout เท่านั้น ไม่มี dashboard หรือการเก็บถาวร และ Kong access log ไม่ได้บันทึกชื่อ Consumer
-- Express Agent endpoints บน Compose network ไม่มีการยืนยันตัวตนของตัวเอง ถ้าเรียกข้าม Kong ตรง ๆ จะผ่านได้
 
 ## Incomplete Functionality
 
 - ไม่มี LLM-based planning หรือการตอบแบบ conversational ทั่วไป
 - ไม่มี persistent A2A task history, retry/resume หลัง Agent restart และ distributed tracing backend
 - ไม่มี Kong Manager, traffic analytics UI หรือระบบเก็บ/ค้น log ส่วนกลาง
-- Automated tests ครอบคลุม planner เป็นหลัก ส่วน API และ failure scenarios ทดสอบผ่าน Postman ด้วยมือ ยังไม่มี automated end-to-end test
+- ไม่มี Automated tests ส่วน API และ failure scenarios ทดสอบผ่าน Postman ด้วยมือ ยังไม่มี automated end-to-end test
 - ไม่มี production secret management, workload identity หรือ hardening สำหรับ deploy นอกเครื่อง assessment
