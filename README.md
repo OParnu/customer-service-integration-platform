@@ -1,6 +1,6 @@
 # Customer Service Integration Platform
 
-ต้นแบบสำหรับ Technical Assessment ของ Partilon: ระบบ Customer และ Order แบบแยกบริการ พร้อม Kong Gateway และ Agent ที่ประสานงานผ่าน A2A
+ต้นแบบสำหรับ Technical Assessment ของ Partilon: บริการ Customer และ Order แยกกัน มี Kong เป็น API Gateway และมี Agent ที่ทำงานร่วมกันผ่าน A2A
 
 ## สถาปัตยกรรม
 
@@ -27,11 +27,11 @@ flowchart LR
   Kong -->|HTTP response| Client
 ```
 
-บริการทั้งหมดเป็น Express + TypeScript; Customer API และ Order API เป็นเจ้าของ PostgreSQL คนละ database และคนละ role แม้ใช้ PostgreSQL container เดียว Agent ไม่มีสิทธิ์ต่อฐานข้อมูลโดยตรง
+ทุกบริการเขียนด้วย Express + TypeScript Customer API และ Order API ใช้ PostgreSQL คนละ database คนละ role (แต่อยู่ใน container เดียวกัน) ส่วน Agent ไม่มีสิทธิ์เข้าถึงฐานข้อมูลโดยตรง ต้องเรียกผ่าน API เท่านั้น
 
 ## เริ่มใช้งาน
 
-ต้องมี Docker Desktop ที่เปิดใช้งาน Docker Compose ได้ และพอร์ต `8000` ว่าง คัดลอก `.env.example` เป็น `.env` เพื่อกำหนด port, timeout, log level และ PostgreSQL superuser password สำหรับการเริ่มฐานข้อมูลครั้งแรก; ถ้าไม่สร้าง `.env` Compose จะใช้ค่าเริ่มต้นเดียวกัน
+ต้องมี Docker Desktop (รองรับ Compose) และพอร์ต `8000` ว่างอยู่
 
 ```powershell
 Copy-Item .env.example .env
@@ -39,9 +39,9 @@ docker compose up --build -d
 docker compose ps
 ```
 
-`.env.example` ตั้งค่า host ports, Coordinator timeout, application log level และ PostgreSQL superuser password; demo API keys กับ application database role passwords ยังคงกำหนดไว้ใน `kong/kong.yml` และ `db/init.sql` สำหรับ assessment นี้
+`.env` ใช้กำหนด host ports, Coordinator timeout, log level และรหัสผ่าน superuser ของ PostgreSQL ถ้าไม่สร้างไฟล์นี้ Compose จะใช้ค่าเริ่มต้นเดียวกัน ส่วน demo API keys และรหัสผ่านของ database role อยู่ใน `kong/kong.yml` และ `db/init.sql`
 
-รอจน services แสดงสถานะ `healthy` แล้วเรียก API ผ่าน `http://localhost:8000` โดยใช้ demo key `demo-client-key` ใน header `apikey`:
+เมื่อทุก service ขึ้นสถานะ `healthy` ให้เรียกผ่าน `http://localhost:8000` โดยส่ง `demo-client-key` ใน header `apikey`:
 
 ```powershell
 curl.exe -H "apikey: demo-client-key" http://localhost:8000/api/v1/customers/C001
@@ -51,131 +51,118 @@ curl.exe -X POST http://localhost:8000/api/v1/agent/query -H "apikey: demo-clien
 curl.exe -X POST http://localhost:8000/api/v1/agent/query -H "apikey: demo-client-key" -H "Content-Type: application/json" -d '{"query":"Show all orders for C001"}'
 ```
 
-## ดู access logs และตาม request
+หยุดระบบด้วย `docker compose down` (ข้อมูลยังอยู่ใน volume) หรือ `docker compose down -v` ถ้าต้องการล้าง database และ seed ทั้งหมด
 
-Kong ส่ง access logs ไปที่ stdout โดยแต่ละบรรทัดมีเวลา, method, URI, HTTP status, เวลา request, upstream และ `X-Correlation-ID`; ดู logs ได้จาก terminal ด้วย Docker Compose:
-
-```powershell
-docker compose logs -f kong coordinator customer-agent order-agent customer-api order-api
-```
-
-Coordinator และ services ใช้ Pino เขียน structured logs เพิ่มรายละเอียดแผน, capability/Agent ที่เลือก และผลของแต่ละขั้นไว้ด้วย correlation ID เดียวกัน หากต้องการกรอง request ที่กำหนดเอง:
-
-```powershell
-docker compose logs --since 10m kong coordinator customer-agent order-agent customer-api order-api | Select-String "trace-demo-002"
-```
-
-Stack นี้ปิด Kong Admin API และไม่มีหน้า dashboard สำหรับ access logs; ใช้ `docker compose logs` ดู stdout ของ Kong และ services ได้เลย
-
-การค้น `C999` ผ่าน Customer API หรือ Agent API คืน `404` พร้อมข้อความ `not_found`; ส่วนคำขอรวม customer กับ order จะทำงานตามลำดับ และแสดงผลบางส่วนอย่างชัดเจนหากไม่พบ order
-
-## Agent ทำงานอย่างไร
-
-- Coordinator แยกการทำงานเป็น Plan → Execute → Respond: สร้างแผนจาก query, เลือก capability จาก Agent Card ที่ค้นพบผ่าน Kong, ทำงานตามลำดับ และสรุปเฉพาะข้อมูลที่ดึงได้จริง
-- ก่อนเรียก Agent ระบบ log แผนและ capability ที่จะใช้; response มี `meta.plan.steps` แสดง Agent ที่เลือกและผลของแต่ละขั้น เพื่อไล่การตัดสินใจด้วย `X-Correlation-ID`
-- รองรับคำขอ order ล่าสุด (`latest`, `last`, `most recent`), order ทั้งหมด (`all`, `every`, `each`, `order history` หรือ `orders` แบบพหูพจน์) และค้น order ด้วย ID เช่น `O1001`; ถ้าระบุ order แบบเอกพจน์โดยไม่บอกช่วง ระบบใช้รายการล่าสุด
-- การค้น order ทั้งหมดอ่านผ่านหน้า ๆ ละไม่เกิน 50 รายการ โดยเรียงจากใหม่ไปเก่า
-- Coordinator ค้น Agent Card ของผู้สมัครและจับคู่ `skills[].id` กับ capability ที่ต้องการ ก่อนส่ง task แบบ A2A ผ่าน Kong; cache ในหน่วยความจำ 5 นาทีช่วยลด discovery traffic ส่วน Agent Card เผย metadata/skills และ A2A จัดการรูปแบบข้อความกับ task lifecycle
-- หากขั้นหลังล้มเหลวหลังจากได้ข้อมูลบางส่วนแล้ว ระบบตอบ `200` พร้อม `status: "partial"`, `answer`, ข้อมูลที่ดึงสำเร็จ และ `issues`; ถ้าคำขอมีทั้ง customer กับ order จะตรวจ `order.customer_id` ให้ตรงกับ customer ก่อนตอบ
-- คำขอที่มี customer ID หรือ order ID หลายรายการจะถูกปฏิเสธด้วย `400 AMBIGUOUS_QUERY` เพื่อไม่เลือก ID แรกอย่างเงียบ ๆ
-- Specialist Agent เรียก API ผ่าน Kong ด้วย service key; API จึงเป็นทางเดียวที่อ่านข้อมูลจากฐานข้อมูล
-- การตัดสินใจเป็น deterministic และไม่มี LLM, prompt หรือ API key ของผู้ให้บริการโมเดล จึงทำซ้ำผลได้ แต่ไม่เข้าใจคำถามทั่วไปนอกเหนือ ID และคำสำคัญที่รองรับ
-- A2A ใช้สื่อสารระหว่าง Agent; การเรียก REST API เป็นการอ่านข้อมูล/เรียก capability ของระบบ ไม่ใช่การส่งงาน Agent-to-Agent
-
-ตัวอย่างคำถามที่ Coordinator รองรับ: `C001`, `show customer C001`, `Name of C001 and their Order` (ตีความเป็น order ล่าสุด), `latest order for C001`, `Show all orders for C001`, `Show orders for C001`, `O1001` และคำถามที่ระบุทั้ง customer กับ order ID
-
-## API routes
+## API
 
 | Method | Route | รายละเอียด |
 |---|---|---|
 | GET | `/api/v1/customers/{customerId}` | อ่านข้อมูล customer |
-| GET | `/api/v1/orders/{orderId}` | อ่าน order |
-| GET | `/api/v1/orders?customerId=C001&limit=50&offset=0` | แสดง order ใหม่ไปเก่าแบบแบ่งหน้า; `limit` 1–50, `offset` 0–1,000,000 |
-| POST | `/api/v1/agent/query` | มอบหมายงานให้ Coordinator |
+| GET | `/api/v1/orders/{orderId}` | อ่านข้อมูล order |
+| GET | `/api/v1/orders?customerId=C001&limit=50&offset=0` | รายการ order เรียงใหม่ไปเก่า แบ่งหน้า (`limit` 1–50, `offset` 0–1,000,000) |
+| POST | `/api/v1/agent/query` | ส่งคำถามให้ Coordinator |
 
-ดูสัญญา API เพิ่มเติมที่ [OpenAPI](openapi/openapi.yaml) และเรียกตัวอย่างได้จาก [Postman collection](postman/Partilon-Assessment.postman_collection.json)
+สัญญา API ฉบับเต็มอยู่ที่ [openapi/openapi.yaml](openapi/openapi.yaml) และมี [Postman collection](postman/Partilon-Assessment.postman_collection.json) สำหรับลองตามสถานการณ์สาธิต
 
-## ความปลอดภัยและความล้มเหลว
+## การทำงานของ Agent
 
-- Kong DB-less โหลด route/plugin จาก `kong/kong.yml`; ทุก route ต้องมี API key ใน `apikey`
-- Demo ใช้ `demo-client-key` สำหรับ client, `coordinator-a2a-key` สำหรับ A2A ระหว่าง Coordinator กับ Agents และ `agent-internal-key` สำหรับ Agent เรียก managed APIs; แต่ละ consumer ถูกจำกัด 30 requests ต่อนาทีด้วย rate limiting แบบ local
-- Kong สร้างหรือคง `X-Correlation-ID` เดิมไว้ แล้วส่งต่อผ่าน Coordinator, A2A task และ managed API calls; response และ logs ใช้ ID เดียวกัน
-- Business API ตอบ 404 เมื่อไม่มี record; Agent query ตอบ `404` เมื่อไม่พบข้อมูล และตอบ `200 partial` เมื่อขั้นถัดไปล้มเหลวหลังมีผลสำเร็จแล้ว; ความล้มเหลวที่เกิดก่อนมีผลตอบ `503` หรือ `504` ตามสาเหตุ ห้าม Agent สร้างข้อมูลแทนผลที่ดึงไม่ได้
-- ลองกรณีไม่มี key: `curl.exe -i http://localhost:8000/api/v1/customers/C001`; เรียกเกิน 30 ครั้งต่อนาทีด้วย key เดิมเพื่อดู `429`
-- ลอง partial result เมื่อ dependency ล่ม: `docker compose stop order-api` แล้วถาม `Find customer C001 and tell me their latest order status`; ควรได้ `200` พร้อม customer, `status: "partial"` และ issue ว่าดึง order ไม่ได้ จากนั้นคืนระบบด้วย `docker compose start order-api`
-- Kong สร้าง ID ให้อัตโนมัติ; หากต้องการกำหนด ID เพื่อไล่ trace เอง ส่ง `X-Correlation-ID` เข้ามาได้:
+Coordinator ทำงานเป็น 4 ขั้น: Plan → Discover → Execute → Respond
+
+1. **Plan** อ่าน query แล้วหา intent, customer/order ID และ capability ที่ต้องใช้
+2. **Discover** ดึง Agent Card ของ specialist agents ผ่าน Kong แล้วจับคู่ `skills[].id` กับ capability ที่ต้องการ (cache ใน memory 5 นาที)
+3. **Execute** ส่ง A2A task ผ่าน Kong ตามลำดับ Specialist agent จะเรียก REST API ผ่าน Kong ด้วย service key อีกชั้นหนึ่ง
+4. **Respond** สรุปคำตอบจากข้อมูลที่ดึงได้จริงเท่านั้น และแนบ `meta.plan.steps` เพื่อดูว่าเลือก Agent ไหนและแต่ละขั้นได้ผลอย่างไร
+
+การตัดสินใจทั้งหมดเป็นกฎแบบ deterministic ไม่ใช้ LLM จึงไม่ต้องมี API key ของโมเดลและผลลัพธ์ซ้ำได้ แลกกับการที่ระบบเข้าใจเฉพาะ ID และคำสำคัญที่กำหนดไว้
+
+**รูปแบบคำถามที่รองรับ:** `C001`, `show customer C001`, `latest order for C001`, `Show all orders for C001`, `O1001`, และคำถามที่ระบุทั้ง customer กับ order ID
+
+**กติกาการตีความ**
+- `latest` / `last` / `most recent` → order ล่าสุด
+- `all` / `every` / `each` / `order history` หรือ `orders` พหูพจน์ → order ทั้งหมด (อ่านทีละหน้า หน้าละไม่เกิน 50 รายการ)
+- ระบุ order เอกพจน์โดยไม่บอกช่วง → ใช้ order ล่าสุด
+- ระบุ order ID เช่น `O1001` → ค้น order นั้นตรง ๆ
+- มี customer หรือ order ID มากกว่าหนึ่งรายการ → ตอบ `400 AMBIGUOUS_QUERY` แทนที่จะเลือกตัวแรกเงียบ ๆ
+- ถ้าคำถามมีทั้ง customer และ order จะตรวจว่า `order.customer_id` ตรงกับ customer ก่อนตอบ
+
+A2A ใช้เฉพาะการส่งงานระหว่าง Agent ส่วนการเรียก REST API คือการอ่านข้อมูลจากระบบ ไม่ใช่การส่งงานระหว่าง Agent
+
+## ความปลอดภัยและ traffic control
+
+- ทุก route ใน Kong ต้องมี API key ใน header `apikey`
+- มี 3 consumer แยกตามบทบาท: `demo-client-key` (client), `coordinator-a2a-key` (Coordinator เรียก Agent) และ `agent-internal-key` (Agent เรียก managed APIs)
+- แต่ละ consumer จำกัด 30 requests ต่อนาที (rate limiting แบบ local)
+- ทดสอบได้ เช่น เรียกโดยไม่ส่ง key (`curl.exe -i http://localhost:8000/api/v1/customers/C001`) จะได้ `401` และเรียกเกิน 30 ครั้งต่อนาทีจะได้ `429`
+
+## การจัดการเมื่อเกิดข้อผิดพลาด
+
+- Business API ตอบ `404` เมื่อไม่พบ record
+- Agent query ตอบ `404` เมื่อไม่พบข้อมูล
+- ถ้าขั้นหลังล้มเหลวหลังจากได้ผลบางส่วนแล้ว จะตอบ `200` พร้อม `status: "partial"`, ข้อมูลที่ดึงได้ และ `issues`
+- ถ้าล้มเหลวก่อนมีผลใด ๆ จะตอบ `503` หรือ `504` ตามสาเหตุ
+- Agent จะไม่สร้างข้อมูลแทนสิ่งที่ดึงไม่ได้
+
+ลองดูได้ด้วยการ `docker compose stop order-api` แล้วถาม `Find customer C001 and tell me their latest order status` ควรได้ข้อมูล customer กลับมาพร้อม `status: "partial"` และ issue ว่าดึง order ไม่ได้ เสร็จแล้วใช้ `docker compose start order-api` เพื่อคืนระบบ
+
+## ไล่ตาม request (observability)
+
+Kong สร้าง `X-Correlation-ID` ให้อัตโนมัติ (หรือใช้ค่าที่ client ส่งมา) แล้วส่งต่อผ่าน Coordinator, A2A task และ API calls ทั้งหมด ค่าเดียวกันจะปรากฏใน response header และ log ทุกบริการ
 
 ```powershell
-curl.exe -i -H "apikey: demo-client-key" -H "X-Correlation-ID: trace-demo-001" http://localhost:8000/api/v1/customers/C001
-curl.exe -i -X POST http://localhost:8000/api/v1/agent/query -H "apikey: demo-client-key" -H "X-Correlation-ID: trace-demo-002" -H "Content-Type: application/json" -d '{"query":"Find customer C001 and tell me their latest order status"}'
-```
+curl.exe -i -X POST http://localhost:8000/api/v1/agent/query -H "apikey: demo-client-key" -H "X-Correlation-ID: trace-demo-001" -H "Content-Type: application/json" -d '{"query":"Find customer C001 and tell me their latest order status"}'
 
-ค้น ID จาก response header `X-Correlation-ID` ใน logs ของ Kong, Coordinator, specialist agents และ APIs:
-
-```powershell
 docker compose logs -f kong coordinator customer-agent order-agent customer-api order-api
 ```
 
-`docker compose down` หยุด services แต่เก็บข้อมูลไว้ใน volume; `docker compose down -v` ลบฐานข้อมูล demo และ seed ทั้งหมด
+จากนั้นค้น `trace-demo-001` ใน logs เพื่อดู request ตั้งแต่ Kong ผ่าน Coordinator, Agents ไปจนถึง API Kong access log แสดงเวลา, method, URI, status, เวลาที่ใช้ และ upstream ส่วน application log ใช้ Pino แบบ structured
 
 ## โครงสร้างโฟลเดอร์
 
-- `services/`: Express APIs, Coordinator และ specialist Agents
-- `packages/shared/`: HTTP errors, request ID/logging, PostgreSQL pool และ A2A adapters
-- `db/init.sql`: สร้าง database/roles/tables และ seed `C001`, `O1001`
-- `kong/kong.yml`: declarative services, routes, key authentication และ rate limit
-- `openapi/openapi.yaml`: API contract
-- `postman/`: collection สำหรับสถานการณ์สาธิต
-- `docs/architecture.md`: flow, decisions, assumptions และ limitations
-
-## แผนอ่านเพื่อเรียนรู้และเลือก Agent technology
-
-1. อ่าน [A2A Protocol](https://a2a-protocol.org/latest/) เพื่อเข้าใจ Agent Card, task และการสื่อสารระหว่าง Agent; ดู [A2A JavaScript SDK](https://github.com/a2aproject/a2a-js) สำหรับ Express adapter และ client ในตัวอย่างนี้
-2. เทียบ orchestration แบบเขียนลำดับแน่นอนกับแบบให้โมเดลตัดสินใจใน [OpenAI Agents SDK: multi-agent](https://openai.github.io/openai-agents-js/guides/multi-agent/) และอ่าน [tools guide](https://openai.github.io/openai-agents-js/guides/tools/) เรื่องการเปิด capability ให้ agent เรียกใช้ เอกสารนี้เป็นแนวทางเรียนต่อ; โค้ดต้นแบบไม่ได้ติดตั้ง SDK ดังกล่าว
-3. ทบทวน [Express 5 API](https://expressjs.com/en/5x/api/), [Express error handling](https://expressjs.com/en/5x/guide/error-handling/) และ [node-postgres pooling](https://node-postgres.com/features/pooling)
-4. ทำความเข้าใจ [Kong DB-less](https://docs.konghq.com/gateway/latest/production/deployment-topologies/db-less-and-declarative-config/), [key authentication](https://docs.konghq.com/hub/kong-inc/key-auth/) และ [rate limiting](https://docs.konghq.com/hub/kong-inc/rate-limiting/configuration/)
-5. เปรียบเทียบทางเลือก Gateway กับ [Apache APISIX architecture](https://apisix.apache.org/docs/apisix/architecture-design/apisix/): เดโมนี้เลือก Kong เพราะ declarative DB-less config ทำให้แพ็กและรีวิว topology ได้ในไฟล์เดียว; ก่อนใช้งานจริงให้เทียบความถนัดของทีม, plugin/feature ที่ต้องใช้, วิธีจัดการ config, observability และรูปแบบ deployment
+- `services/` – Express APIs, Coordinator และ specialist Agents
+- `packages/shared/` – HTTP errors, request ID/logging, PostgreSQL pool และ A2A adapters
+- `db/init.sql` – สร้าง database, roles, tables และ seed ข้อมูล (`C001`, `O1001`)
+- `kong/kong.yml` – services, routes, key authentication และ rate limit
+- `openapi/openapi.yaml` – API contract
+- `postman/` – collection สำหรับสถานการณ์สาธิต
+- `docs/architecture.md` – flow, decisions, assumptions และ limitations
 
 ## Technology choices
 
-- **Node.js 22 + TypeScript:** ใช้ runtime ที่รองรับ A2A JavaScript SDK และช่วยตรวจชนิดข้อมูลระหว่างพัฒนา
-- **Express 5:** ใช้ทำ Customer API, Order API, Coordinator และ HTTP adapter ของ Agents
-- **PostgreSQL 17:** ใช้เก็บข้อมูล customer และ order ในฐานข้อมูลแยกกันเชิงตรรกะ
-- **Kong Gateway 3.9.4:** เลือก DB-less declarative configuration เพื่อเก็บ routes และ plugins ไว้ใน `kong/kong.yml` และเริ่มระบบได้ด้วย Compose
-- **A2A JavaScript SDK 1.0.1:** ใช้ Agent Cards และ task lifecycle สำหรับการค้นหา Agent และมอบหมายงานระหว่าง Agents
-- **Pino และ Docker Compose:** Pino เขียน structured application logs ไป stdout; Docker Compose ใช้รันและดู logs ของ stack ในเครื่อง
-- **ไม่มี LLM framework:** การวางแผนเป็น deterministic TypeScript เพื่อให้ผลซ้ำได้และไม่ต้องใช้ model API key
+- **Node.js 22 + TypeScript** – รองรับ A2A JavaScript SDK และช่วยตรวจชนิดข้อมูลตอนพัฒนา
+- **Express 5** – ใช้กับทั้ง APIs, Coordinator และ HTTP adapter ของ Agents
+- **PostgreSQL 17** – แยก database และ role ของ customer กับ order
+- **Kong Gateway 3.9.4 (DB-less)** – เก็บ routes และ plugins ไว้ในไฟล์เดียว (`kong/kong.yml`) รีวิวง่ายและรันด้วย Compose ได้เลย ถ้าจะใช้งานจริงควรเทียบกับตัวเลือกอื่นอย่าง Apache APISIX ตามความถนัดของทีมและ plugin ที่ต้องใช้
+- **A2A JavaScript SDK 1.0.1** – ใช้ Agent Card และ task lifecycle
+- **Pino + Docker Compose** – structured logs ไป stdout และรัน stack ในเครื่อง
+- **ไม่ใช้ LLM framework** – การวางแผนเป็น TypeScript แบบ deterministic
 
 ## Architecture decisions
 
-- แยก Customer API และ Order API ตามเจ้าของข้อมูล; แต่ละ API เชื่อมต่อเฉพาะฐานข้อมูลและ role ของตน Agent อ่านข้อมูลผ่าน API ไม่เชื่อมฐานข้อมูลโดยตรง
-- ให้ client และการเรียก HTTP/A2A ระหว่าง services ผ่าน Kong เพื่อให้ gateway ใช้ authentication, rate limiting และ correlation ID ในจุดเดียว
-- Coordinator ทำงานแบบ **Plan → Discover → Execute → Respond**: สร้างแผน, ค้น Agent Card ผ่าน Kong, เลือก Agent จาก advertised skill แล้วรัน A2A tasks ตามลำดับ
-- Coordinator กับ specialist Agents สื่อสารด้วย A2A; Agents เรียก business REST APIs ผ่าน Kong เพื่ออ่านข้อมูล
-- กำหนดความหมาย query ให้แน่นอน: ระบุ `latest` เพื่อเอารายการล่าสุด, ระบุ `all` หรือพหูพจน์เพื่อเอาทั้งหมด, และระบุ order ID เพื่อค้นรายการนั้น; order เอกพจน์ที่ไม่ระบุช่วงหมายถึงรายการล่าสุด
-- ส่ง `X-Correlation-ID` ต่อระหว่าง Kong, Express services และ A2A tasks เพื่อค้น log ของธุรกรรมเดียวกัน
+- แยก Customer API กับ Order API ตามเจ้าของข้อมูล แต่ละตัวเชื่อมเฉพาะ database และ role ของตัวเอง
+- ทุกการเรียกระหว่าง client, services และ Agents ผ่าน Kong เพื่อให้ authentication, rate limiting และ correlation ID อยู่ที่จุดเดียว
+- Agent อ่านข้อมูลผ่าน API เท่านั้น ไม่ต่อ database ตรง
+- ใช้ A2A สำหรับการส่งงานระหว่าง Agent และใช้ REST สำหรับการอ่านข้อมูล
 
 ## Assumptions
 
-- ประเมินและสาธิตบนเครื่องเดียวด้วย Docker Compose; seed `C001`, `O1001` และรายการตัวอย่างเป็นข้อมูล demo
-- customer และ order แยกเป็นคนละ database และ role แต่ใช้ PostgreSQL container เดียว เพื่อลดภาระ setup ในกรอบ assessment
-- การขอรายการ order ทั้งหมดมีเพดานไม่เกิน 50 รายการต่อ query; API สำหรับ pagination รองรับการอ่านเป็นหน้า
-- คำถามที่ระบบต้องรองรับอยู่ในขอบเขต customer/order lookup และตัวอย่างภาษาไทย/อังกฤษที่ระบุใน README
-- API keys และรหัสผ่านในไฟล์ config เป็นค่า demo สำหรับ local assessment เท่านั้น
+- ประเมินและสาธิตบนเครื่องเดียวด้วย Docker Compose ข้อมูลทั้งหมดเป็น demo
+- ใช้ PostgreSQL container เดียวเพื่อลดภาระการตั้งค่า (แยกที่ระดับ database และ role)
+- คำถามอยู่ในขอบเขต customer/order lookup ตามตัวอย่างข้างต้น
+- API keys และรหัสผ่านใน config เป็นค่า demo สำหรับ local เท่านั้น
 
 ## Known limitations
 
-- Coordinator ใช้กฎและ keyword ที่กำหนดไว้ จึงไม่เข้าใจคำถามทั่วไปนอกขอบเขตที่รองรับ และอาจต้องเพิ่มกฎเมื่อเพิ่มรูปแบบคำถาม
-- มี Kong instance เดียวและ rate limit แบบ local จึงไม่มี quota ที่ประสานกันระหว่างหลาย gateway nodes
-- Customer database และ Order database อยู่ใน PostgreSQL instance เดียว จึงยังใช้ instance หรือ failure domain ร่วมกัน
-- Agent task state และ cache ของ Agent Cards อยู่ใน memory; restart แล้ว task state หาย และ cache อาจใช้ข้อมูล Agent Card เดิมได้ถึง 5 นาที
-- Kong access logs และ Pino logs ดูจาก Docker stdout; ไม่มีหน้า dashboard หรือระบบค้น log แบบถาวร และ access log ปัจจุบันไม่ได้บันทึกชื่อ Consumer
-- Kong ป้องกันเส้นทางที่เปิดผ่าน gateway ด้วย API keys แต่ Express Agent endpoints บน Compose network ยังไม่มีการยืนยันตัวตนเฉพาะ หากเรียกข้าม Kong โดยตรง
+- Coordinator ใช้กฎและ keyword ที่กำหนดไว้ จึงไม่เข้าใจคำถามทั่วไปนอกขอบเขต
+- มี Kong instance เดียวและ rate limit แบบ local ไม่มี quota ร่วมกันข้ามหลาย node
+- Customer DB และ Order DB อยู่ใน PostgreSQL instance เดียว จึงใช้ failure domain ร่วมกัน
+- Task state และ Agent Card cache อยู่ใน memory restart แล้วหาย และ cache อาจเก่าได้ถึง 5 นาที
+- Logs ดูได้จาก Docker stdout เท่านั้น ไม่มี dashboard หรือการเก็บถาวร และ Kong access log ไม่ได้บันทึกชื่อ Consumer
+- Express Agent endpoints บน Compose network ไม่มีการยืนยันตัวตนของตัวเอง ถ้าเรียกข้าม Kong ตรง ๆ จะผ่านได้
 
 ## Incomplete functionality
 
-- ยังไม่มี LLM-based planning หรือการตอบคำถามแบบ conversational ทั่วไป
-- ยังไม่มี persistent A2A task history, resume/retry หลัง Agent restart หรือ distributed tracing backend
-- ยังไม่มี Kong Manager, traffic analytics UI หรือ central log retention/search service ใน Compose stack
-- Automated tests ครอบคลุม planner เป็นหลัก; Postman collection ใช้ทดสอบ API และสถานการณ์สาธิตด้วยตนเอง ยังไม่มี automated end-to-end test ครอบคลุมทุก service และ failure scenario
-- ยังไม่มี production secret management, workload identity หรือ hardening สำหรับการ deploy นอกเครื่อง assessment
+- ไม่มี LLM-based planning หรือการตอบแบบ conversational ทั่วไป
+- ไม่มี persistent A2A task history, retry/resume หลัง Agent restart และ distributed tracing backend
+- ไม่มี Kong Manager, traffic analytics UI หรือระบบเก็บ/ค้น log ส่วนกลาง
+- Automated tests ครอบคลุม planner เป็นหลัก ส่วน API และ failure scenarios ทดสอบผ่าน Postman ด้วยมือ ยังไม่มี automated end-to-end test
+- ไม่มี production secret management, workload identity หรือ hardening สำหรับ deploy นอกเครื่อง assessment
