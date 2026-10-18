@@ -140,12 +140,12 @@ route, API key credentials, consumer groups และ ACL allow-list ทั้�
 
 - Business API ตอบ `404` เมื่อไม่พบ record
 - Agent query ตอบ `404` เมื่อไม่พบข้อมูล
-- ถ้าขั้นหลังล้มเหลวหลังจากได้ผลบางส่วนแล้ว จะตอบ `200` พร้อม `status: "partial"`, ข้อมูลที่ดึงได้ และ `issues` แม้ failure นั้นจะเป็น timeout
+- ถ้า Failure หลังจากได้ผลบางส่วนแล้ว จะตอบ `200` พร้อม `status: "partial"`, ข้อมูลที่ดึงได้ และ `issues` แม้ failure นั้นจะเป็น timeout
 - ถ้ายังไม่มีขั้นตอนใดได้ผลและ Agent หรือ dependency ใช้งานไม่ได้ จะตอบ `503` เมื่อพบ failure ได้ทันที ส่วนถ้า Agent Card discovery หรือ A2A task ไม่ตอบภายใน deadline จะตอบ `504 AGENT_TIMEOUT` การหยุด `order-agent` ใน Compose ให้ `504` เพราะ Kong รอ connection จนหมดเวลา ไม่ใช่ `503`
 - `AGENT_CALL_TIMEOUT_MS` ใน `.env` กำหนด timeout ต่อการค้น Agent Card หรือส่ง A2A task (ค่าเริ่มต้น `10000` ms) ส่วน `COORDINATOR_TIMEOUT_MS` กำหนด deadline รวมของ Coordinator สำหรับทุกขั้นตามลำดับ (ค่าเริ่มต้น `25000` ms) A2A timeout ตั้งให้ยาวกว่า timeout `5000` ms ของ managed API เพื่อให้ Agent ส่งผล unavailable กลับได้ก่อน แม้มี Gateway overhead
 - Agent จะไม่สร้างข้อมูลแทนสิ่งที่ดึงไม่ได้
 
-จำลองความล้มเหลวทั้งสามแบบได้ดังนี้:
+จำลอง Failure ทั้งสามแบบได้ดังนี้:
 
 ```powershell
 # Backend unavailable: customer step สำเร็จ แต่การอ่าน order ผ่าน Order API ล้มเหลว จึงได้ 200 partial
