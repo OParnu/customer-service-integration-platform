@@ -99,7 +99,7 @@ A2A ใช้เฉพาะการส่งงานระหว่าง Age
 - Business API ตอบ `404` เมื่อไม่พบ record
 - Agent query ตอบ `404` เมื่อไม่พบข้อมูล
 - ถ้าขั้นหลังล้มเหลวหลังจากได้ผลบางส่วนแล้ว จะตอบ `200` พร้อม `status: "partial"`, ข้อมูลที่ดึงได้ และ `issues`
-- ถ้าล้มเหลวก่อนมีผลใด ๆ จะตอบ `503` หรือ `504` ตามสาเหตุ
+- ถ้ายังไม่มีขั้นตอนได้ผลและ Agent หรือ dependency ใช้งานไม่ได้ จะตอบ `503`; ถ้า timeout ระหว่างค้น Agent Card หรือส่ง A2A task จะตอบ `504`
 - Agent จะไม่สร้างข้อมูลแทนสิ่งที่ดึงไม่ได้
 
 ลองดูได้ด้วยการ `docker compose stop order-api` แล้วถาม `Find customer C001 and tell me their latest order status` ควรได้ข้อมูล customer กลับมาพร้อม `status: "partial"` และ issue ว่าดึง order ไม่ได้ เสร็จแล้วใช้ `docker compose start order-api` เพื่อคืนระบบ

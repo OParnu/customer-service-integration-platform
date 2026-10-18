@@ -159,7 +159,7 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/Unavailable' }
         '504':
-          description: Delegated agent task timed out
+          description: Agent Card discovery or a delegated A2A task timed out
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorEnvelope' }

@@ -62,7 +62,7 @@ Kong authenticates A2A discovery and task calls with the dedicated `coordinator-
 
 - Customer and order APIs return `400` for invalid IDs or query parameters and `404` when a requested record does not exist.
 - Agent query returns `404` with `status: "not_found"` when a requested record is missing or a requested order belongs to a different customer.
-- If the customer lookup succeeds but the requested order is missing, or a later Agent/dependency step fails, the Coordinator returns `200` with `status: "partial"`, the customer result, and a structured `issues` entry. A failure before any step succeeds returns `503`; a delegated task timeout before any result succeeds returns `504`.
+- If the customer lookup succeeds but the requested order is missing, or a later Agent/dependency step fails, the Coordinator returns `200` with `status: "partial"`, the customer result, and a structured `issues` entry. If no step has succeeded, an unavailable Agent/dependency returns `503`; a timeout during Agent Card discovery or an A2A task returns `504`.
 - Invalid or ambiguous plans return `400`; for example, a query that includes two distinct customer IDs is rejected instead of silently using the first one.
 - Errors from Express services use `{ "error": { "code", "message", "requestId" } }`. Kong-generated `401` and `429` responses use the gateway's response format.
 - Express access logs, A2A task completion logs, API responses, and Kong access logs share the same `X-Correlation-ID` for one end-to-end request. Express accepts only short, log-safe characters in a caller-supplied correlation ID.
