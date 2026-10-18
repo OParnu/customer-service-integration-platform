@@ -1,0 +1,31 @@
+{
+  "name": "partilon-customer-service-integration-platform",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test tests/coordinator-planner.test.mjs",
+    "start:customer-api": "node dist/services/customer-api/src/index.js",
+    "start:order-api": "node dist/services/order-api/src/index.js",
+    "start:coordinator": "node dist/services/coordinator/src/index.js",
+    "start:customer-agent": "node dist/services/customer-agent/src/index.js",
+    "start:order-agent": "node dist/services/order-agent/src/index.js"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "1.0.1",
+    "express": "5.1.0",
+    "pg": "8.16.3",
+    "pino": "9.7.0",
+    "pino-http": "10.5.0"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.3",
+    "@types/node": "22.15.30",
+    "@types/pg": "8.15.4",
+    "typescript": "5.8.3"
+  }
+}

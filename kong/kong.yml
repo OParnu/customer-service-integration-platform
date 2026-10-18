@@ -1,0 +1,76 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: customer-api
+    url: http://customer-api:3001
+    routes:
+      - name: customers
+        paths: [ /api/v1/customers ]
+        strip_path: false
+        methods: [ GET ]
+
+  - name: order-api
+    url: http://order-api:3002
+    routes:
+      - name: orders
+        paths: [ /api/v1/orders ]
+        strip_path: false
+        methods: [ GET ]
+
+  - name: coordinator-agent
+    url: http://coordinator:3003
+    routes:
+      - name: agent-query
+        paths: [ /api/v1/agent/query ]
+        strip_path: false
+        methods: [ POST ]
+
+  - name: customer-agent-a2a
+    url: http://customer-agent:3004
+    routes:
+      - name: customer-agent-a2a
+        paths: [ /a2a/customer-agent ]
+        strip_path: true
+        methods: [ GET, POST ]
+
+  - name: order-agent-a2a
+    url: http://order-agent:3005
+    routes:
+      - name: order-agent-a2a
+        paths: [ /a2a/order-agent ]
+        strip_path: true
+        methods: [ GET, POST ]
+
+plugins:
+  - name: correlation-id
+    config:
+      header_name: X-Correlation-ID
+      generator: uuid#counter
+      echo_downstream: true
+
+  - name: key-auth
+    config:
+      key_names: [ apikey ]
+      hide_credentials: true
+      key_in_header: true
+      key_in_query: false
+      key_in_body: false
+
+  - name: rate-limiting
+    config:
+      minute: 30
+      policy: local
+      limit_by: consumer
+
+consumers:
+  - username: demo-client
+    keyauth_credentials:
+      - key: demo-client-key
+  - username: internal-agents
+    keyauth_credentials:
+      - key: agent-internal-key
+  - username: coordinator-a2a
+    keyauth_credentials:
+      - key: coordinator-a2a-key
+

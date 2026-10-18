@@ -1,0 +1,147 @@
+name: partilon-assessment
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_demo_password}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [platform]
+
+  customer-api:
+    build: .
+    command: ["npm", "run", "start:customer-api"]
+    environment:
+      PORT: 3001
+      SERVICE_NAME: customer-api
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgres://customer_app:customer_demo_password@postgres:5432/customer_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [platform]
+
+  order-api:
+    build: .
+    command: ["npm", "run", "start:order-api"]
+    environment:
+      PORT: 3002
+      SERVICE_NAME: order-api
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgres://order_app:order_demo_password@postgres:5432/order_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [platform]
+
+  customer-agent:
+    build: .
+    command: ["npm", "run", "start:customer-agent"]
+    environment:
+      PORT: 3004
+      SERVICE_NAME: customer-agent
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      AGENT_URL: http://kong:8000/a2a/customer-agent/
+      GATEWAY_URL: http://kong:8000
+      INTERNAL_API_KEY: agent-internal-key
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3004/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [platform]
+
+  order-agent:
+    build: .
+    command: ["npm", "run", "start:order-agent"]
+    environment:
+      PORT: 3005
+      SERVICE_NAME: order-agent
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      AGENT_URL: http://kong:8000/a2a/order-agent/
+      GATEWAY_URL: http://kong:8000
+      INTERNAL_API_KEY: agent-internal-key
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3005/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [platform]
+
+  coordinator:
+    build: .
+    command: ["npm", "run", "start:coordinator"]
+    environment:
+      PORT: 3003
+      SERVICE_NAME: coordinator-agent
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      COORDINATOR_TIMEOUT_MS: ${COORDINATOR_TIMEOUT_MS:-25000}
+      CUSTOMER_AGENT_URL: http://kong:8000/a2a/customer-agent/
+      ORDER_AGENT_URL: http://kong:8000/a2a/order-agent/
+      A2A_GATEWAY_KEY: coordinator-a2a-key
+    depends_on:
+      customer-agent:
+        condition: service_healthy
+      order-agent:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3003/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [platform]
+
+  kong:
+    image: kong/kong:3.9.4
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_ADMIN_LISTEN: "off"
+      KONG_LOG_LEVEL: notice
+      KONG_NGINX_HTTP_LOG_FORMAT: 'correlation_id_log "$$time_iso8601 method=$$request_method uri=$$request_uri status=$$status request_time=$$request_time upstream_addr=$$upstream_addr upstream_status=$$upstream_status upstream_response_time=$$upstream_response_time correlation_id=$$http_X_Correlation_ID"'
+      KONG_PROXY_ACCESS_LOG: /dev/stdout correlation_id_log
+    ports:
+      - "${GATEWAY_PORT:-8000}:8000"
+    volumes:
+      - ./kong/kong.yml:/kong/kong.yml:ro
+    depends_on:
+      customer-api:
+        condition: service_healthy
+      order-api:
+        condition: service_healthy
+      coordinator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [platform]
+
+volumes:
+  postgres-data:
+
+networks:
+  platform:
+    driver: bridge
+

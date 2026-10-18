@@ -1,0 +1,207 @@
+{
+  "info": {
+    "name": "Partilon Customer Service Integration Platform",
+    "description": "Assessment scenarios for Customer/Order APIs, Kong access logs, authentication, and deterministic A2A orchestration.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8000" },
+    { "key": "apiKey", "value": "demo-client-key" },
+    { "key": "a2aKey", "value": "coordinator-a2a-key" }
+  ],
+  "item": [
+    {
+      "name": "Customer and Order APIs",
+      "item": [
+        {
+          "name": "Get customer C001",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{apiKey}}" }],
+            "url": "{{baseUrl}}/api/v1/customers/C001"
+          }
+        },
+        {
+          "name": "Unknown customer C999 (expect 404)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{apiKey}}" }],
+            "url": "{{baseUrl}}/api/v1/customers/C999"
+          }
+        },
+        {
+          "name": "Get order O1001",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{apiKey}}" }],
+            "url": "{{baseUrl}}/api/v1/orders/O1001"
+          }
+        },
+        {
+          "name": "Get latest order for C001",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{apiKey}}" }],
+            "url": "{{baseUrl}}/api/v1/orders?customerId=C001&limit=1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "A2A discovery through Kong",
+      "item": [
+        {
+          "name": "Get Customer Agent Card via Kong",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{a2aKey}}" }],
+            "url": "{{baseUrl}}/a2a/customer-agent/.well-known/agent-card.json"
+          }
+        },
+        {
+          "name": "Get Order Agent Card via Kong",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{a2aKey}}" }],
+            "url": "{{baseUrl}}/a2a/order-agent/.well-known/agent-card.json"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Agent coordination",
+      "item": [
+        {
+          "name": "Customer with latest order (multi-agent sequence)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{apiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Find customer C001 and tell me their latest order status\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/agent/query"
+          }
+        },
+        {
+          "name": "Customer with all orders (multi-agent sequence)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{apiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Show all orders for C001\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/agent/query"
+          }
+        },
+        {
+          "name": "Unqualified singular order defaults to latest",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{apiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Name of C001 and their Order\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/agent/query"
+          }
+        },
+        {
+          "name": "Delegate order lookup for O1001",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{apiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Find order O1001\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/agent/query"
+          }
+        },
+        {
+          "name": "Reject order belonging to another customer (expect 404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{apiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Show customer C001 and order O2001\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "O2001 belongs to C002. The Coordinator must not present it as C001's order.",
+            "url": "{{baseUrl}}/api/v1/agent/query"
+          }
+        },
+        {
+          "name": "Reject multiple customer IDs (expect 400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{apiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Compare customers C001 and C002\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "The Coordinator must reject an ambiguous request instead of silently choosing the first ID.",
+            "url": "{{baseUrl}}/api/v1/agent/query"
+          }
+        },
+        {
+          "name": "Agent lookup for unknown customer C999 (expect 404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{apiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Find customer C999\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/agent/query"
+          }
+        },
+        {
+          "name": "Missing API key (expect 401)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/customers/C001"
+          }
+        },
+        {
+          "name": "Rate limit (send 31 times within one minute; expect 429)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "apikey", "value": "{{apiKey}}" }],
+            "description": "Kong allows 30 requests per minute per consumer. Send this request 31 times in the same minute to see the gateway's 429 response.",
+            "url": "{{baseUrl}}/api/v1/customers/C001"
+          }
+        }
+      ]
+    }
+  ]
+}

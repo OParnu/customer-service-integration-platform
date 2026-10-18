@@ -1,0 +1,261 @@
+openapi: 3.1.0
+info:
+  title: Partilon Customer Service Integration Platform
+  version: 1.0.0
+  description: Customer and order APIs plus a deterministic Plan/Execute/Respond coordinator with A2A capability discovery.
+servers:
+  - url: http://localhost:8000
+security:
+  - ApiKeyAuth: []
+paths:
+  /api/v1/customers/{customerId}:
+    get:
+      operationId: getCustomer
+      summary: Retrieve a customer
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^C[0-9]{3,10}$', example: C001 }
+      responses:
+        '200':
+          description: Customer found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { $ref: '#/components/schemas/Customer' }
+                  meta: { $ref: '#/components/schemas/Meta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /api/v1/orders/{orderId}:
+    get:
+      operationId: getOrder
+      summary: Retrieve an order
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^O[0-9]{3,10}$', example: O1001 }
+      responses:
+        '200':
+          description: Order found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { $ref: '#/components/schemas/Order' }
+                  meta: { $ref: '#/components/schemas/Meta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /api/v1/orders:
+    get:
+      operationId: listCustomerOrders
+      summary: List a customer's orders, newest first
+      parameters:
+        - name: customerId
+          in: query
+          required: true
+          schema: { type: string, pattern: '^C[0-9]{3,10}$', example: C001 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 }
+      responses:
+        '200':
+          description: Matching orders (empty array when none exist)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Order' }
+                  meta:
+                    allOf:
+                      - $ref: '#/components/schemas/Meta'
+                      - type: object
+                        properties:
+                          count: { type: integer }
+                          limit: { type: integer }
+                          offset: { type: integer }
+                          hasMore: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /api/v1/agent/query:
+    post:
+      operationId: queryCustomerServiceAgent
+      summary: Ask the coordinator to retrieve customer or order information
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+                  description: Deterministic planning supports customer lookups, latest/all orders, and order IDs. Capabilities are matched against discovered A2A Agent Cards. An unqualified singular order request defaults to the latest order.
+                  example: Show all orders for C001
+      responses:
+        '200':
+          description: Completed query or an explicitly partial result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, answer, meta]
+                properties:
+                  status: { type: string, enum: [ok, partial] }
+                  answer: { type: string, description: Human-readable summary based only on retrieved data }
+                  customer: { $ref: '#/components/schemas/Customer' }
+                  order: { oneOf: [{ $ref: '#/components/schemas/Order' }, { type: 'null' }] }
+                  latestOrder: { oneOf: [{ $ref: '#/components/schemas/Order' }, { type: 'null' }] }
+                  orders:
+                    type: array
+                    items: { $ref: '#/components/schemas/Order' }
+                  message: { type: string }
+                  issues:
+                    type: array
+                    items: { $ref: '#/components/schemas/AgentIssue' }
+                  meta: { $ref: '#/components/schemas/AgentQueryMeta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: Requested record was not found, or the order does not belong to the requested customer
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, answer, message, meta]
+                properties:
+                  status: { type: string, const: not_found }
+                  answer: { type: string }
+                  message: { type: string }
+                  customerId: { type: string }
+                  orderId: { type: string }
+                  meta: { $ref: '#/components/schemas/AgentQueryMeta' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504':
+          description: Delegated agent task timed out
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: apikey
+  schemas:
+    Customer:
+      type: object
+      required: [id, name, email, phone, created_at]
+      properties:
+        id: { type: string, example: C001 }
+        name: { type: string, example: Avery Chen }
+        email: { type: string, format: email }
+        phone: { type: string }
+        created_at: { type: string, format: date-time }
+    Order:
+      type: object
+      required: [id, customer_id, status, total, created_at]
+      properties:
+        id: { type: string, example: O1001 }
+        customer_id: { type: string, example: C001 }
+        status: { type: string, enum: [pending, processing, shipped, delivered, cancelled] }
+        total: { type: string, example: '1299.00' }
+        created_at: { type: string, format: date-time }
+    Meta:
+      type: object
+      required: [requestId]
+      properties:
+        requestId: { type: string }
+    AgentQueryMeta:
+      type: object
+      required: [requestId, intent, plan]
+      properties:
+        requestId: { type: string }
+        intent: { type: string, enum: [customer_lookup, order_lookup, customer_order_lookup] }
+        plan:
+          type: object
+          required: [steps]
+          properties:
+            steps:
+              type: array
+              items:
+                type: object
+                required: [capability, action, status]
+                properties:
+                  capability: { type: string }
+                  action: { type: string }
+                  agent: { type: string }
+                  status: { type: string, enum: [planned, completed, not_found, failed] }
+    AgentIssue:
+      type: object
+      required: [capability, code, message]
+      properties:
+        capability: { type: string }
+        code: { type: string }
+        message: { type: string }
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            requestId: { type: string }
+    RateLimitError:
+      type: object
+      properties:
+        message: { type: string, example: API rate limit exceeded }
+  responses:
+    BadRequest:
+      description: Invalid path, query, or JSON input
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Unauthorized:
+      description: Missing or invalid API key
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    RateLimited:
+      description: Gateway request limit exceeded
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/RateLimitError' }
+    Unavailable:
+      description: A downstream API or delegated agent is unavailable
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
