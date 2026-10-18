@@ -136,11 +136,46 @@ docker compose logs -f kong coordinator customer-agent order-agent customer-api 
 4. ทำความเข้าใจ [Kong DB-less](https://docs.konghq.com/gateway/latest/production/deployment-topologies/db-less-and-declarative-config/), [key authentication](https://docs.konghq.com/hub/kong-inc/key-auth/) และ [rate limiting](https://docs.konghq.com/hub/kong-inc/rate-limiting/configuration/)
 5. เปรียบเทียบทางเลือก Gateway กับ [Apache APISIX architecture](https://apisix.apache.org/docs/apisix/architecture-design/apisix/): เดโมนี้เลือก Kong เพราะ declarative DB-less config ทำให้แพ็กและรีวิว topology ได้ในไฟล์เดียว; ก่อนใช้งานจริงให้เทียบความถนัดของทีม, plugin/feature ที่ต้องใช้, วิธีจัดการ config, observability และรูปแบบ deployment
 
-## Assumptions และข้อจำกัด
+## Technology choices
 
-- ใช้ Node.js 22 ใน container (สูงกว่าขั้นต่ำ Node.js 20), TypeScript, Express 5, PostgreSQL และ A2A JS SDK 1.x
-- ฐานข้อมูลแยกเชิงตรรกะภายใน instance เดียว เพื่อลดเวลาตั้งระบบ; ไม่ได้แยก failure domain
-- Kong มี gateway instance เดียวและ local rate-limit counter; ไม่ใช่ distributed quota
-- A2A task store อยู่ใน memory; restart แล้ว task state หาย และ endpoint ภายในยังไม่มีการยืนยันตัวตนเฉพาะ A2A
-- API key, password และข้อมูล seed ใน Compose เป็นค่าตัวอย่างสำหรับเครื่อง local เท่านั้น; อย่านำไปใช้ production
-- การแยก Agent เป็น service สาธิต discovery และ delegation; กติกา query รองรับเฉพาะตัวอย่างใน assessment ไม่ใช่ general-purpose conversational agent
+- **Node.js 22 + TypeScript:** ใช้ runtime ที่รองรับ A2A JavaScript SDK และช่วยตรวจชนิดข้อมูลระหว่างพัฒนา
+- **Express 5:** ใช้ทำ Customer API, Order API, Coordinator และ HTTP adapter ของ Agents
+- **PostgreSQL 17:** ใช้เก็บข้อมูล customer และ order ในฐานข้อมูลแยกกันเชิงตรรกะ
+- **Kong Gateway 3.9.4:** เลือก DB-less declarative configuration เพื่อเก็บ routes และ plugins ไว้ใน `kong/kong.yml` และเริ่มระบบได้ด้วย Compose
+- **A2A JavaScript SDK 1.0.1:** ใช้ Agent Cards และ task lifecycle สำหรับการค้นหา Agent และมอบหมายงานระหว่าง Agents
+- **Pino และ Docker Compose:** Pino เขียน structured application logs ไป stdout; Docker Compose ใช้รันและดู logs ของ stack ในเครื่อง
+- **ไม่มี LLM framework:** การวางแผนเป็น deterministic TypeScript เพื่อให้ผลซ้ำได้และไม่ต้องใช้ model API key
+
+## Architecture decisions
+
+- แยก Customer API และ Order API ตามเจ้าของข้อมูล; แต่ละ API เชื่อมต่อเฉพาะฐานข้อมูลและ role ของตน Agent อ่านข้อมูลผ่าน API ไม่เชื่อมฐานข้อมูลโดยตรง
+- ให้ client และการเรียก HTTP/A2A ระหว่าง services ผ่าน Kong เพื่อให้ gateway ใช้ authentication, rate limiting และ correlation ID ในจุดเดียว
+- Coordinator ทำงานแบบ **Plan → Discover → Execute → Respond**: สร้างแผน, ค้น Agent Card ผ่าน Kong, เลือก Agent จาก advertised skill แล้วรัน A2A tasks ตามลำดับ
+- Coordinator กับ specialist Agents สื่อสารด้วย A2A; Agents เรียก business REST APIs ผ่าน Kong เพื่ออ่านข้อมูล
+- กำหนดความหมาย query ให้แน่นอน: ระบุ `latest` เพื่อเอารายการล่าสุด, ระบุ `all` หรือพหูพจน์เพื่อเอาทั้งหมด, และระบุ order ID เพื่อค้นรายการนั้น; order เอกพจน์ที่ไม่ระบุช่วงหมายถึงรายการล่าสุด
+- ส่ง `X-Correlation-ID` ต่อระหว่าง Kong, Express services และ A2A tasks เพื่อค้น log ของธุรกรรมเดียวกัน
+
+## Assumptions
+
+- ประเมินและสาธิตบนเครื่องเดียวด้วย Docker Compose; seed `C001`, `O1001` และรายการตัวอย่างเป็นข้อมูล demo
+- customer และ order แยกเป็นคนละ database และ role แต่ใช้ PostgreSQL container เดียว เพื่อลดภาระ setup ในกรอบ assessment
+- การขอรายการ order ทั้งหมดมีเพดานไม่เกิน 50 รายการต่อ query; API สำหรับ pagination รองรับการอ่านเป็นหน้า
+- คำถามที่ระบบต้องรองรับอยู่ในขอบเขต customer/order lookup และตัวอย่างภาษาไทย/อังกฤษที่ระบุใน README
+- API keys และรหัสผ่านในไฟล์ config เป็นค่า demo สำหรับ local assessment เท่านั้น
+
+## Known limitations
+
+- Coordinator ใช้กฎและ keyword ที่กำหนดไว้ จึงไม่เข้าใจคำถามทั่วไปนอกขอบเขตที่รองรับ และอาจต้องเพิ่มกฎเมื่อเพิ่มรูปแบบคำถาม
+- มี Kong instance เดียวและ rate limit แบบ local จึงไม่มี quota ที่ประสานกันระหว่างหลาย gateway nodes
+- Customer database และ Order database อยู่ใน PostgreSQL instance เดียว จึงยังใช้ instance หรือ failure domain ร่วมกัน
+- Agent task state และ cache ของ Agent Cards อยู่ใน memory; restart แล้ว task state หาย และ cache อาจใช้ข้อมูล Agent Card เดิมได้ถึง 5 นาที
+- Kong access logs และ Pino logs ดูจาก Docker stdout; ไม่มีหน้า dashboard หรือระบบค้น log แบบถาวร และ access log ปัจจุบันไม่ได้บันทึกชื่อ Consumer
+- Kong ป้องกันเส้นทางที่เปิดผ่าน gateway ด้วย API keys แต่ Express Agent endpoints บน Compose network ยังไม่มีการยืนยันตัวตนเฉพาะ หากเรียกข้าม Kong โดยตรง
+
+## Incomplete functionality
+
+- ยังไม่มี LLM-based planning หรือการตอบคำถามแบบ conversational ทั่วไป
+- ยังไม่มี persistent A2A task history, resume/retry หลัง Agent restart หรือ distributed tracing backend
+- ยังไม่มี Kong Manager, traffic analytics UI หรือ central log retention/search service ใน Compose stack
+- Automated tests ครอบคลุม planner เป็นหลัก; Postman collection ใช้ทดสอบ API และสถานการณ์สาธิตด้วยตนเอง ยังไม่มี automated end-to-end test ครอบคลุมทุก service และ failure scenario
+- ยังไม่มี production secret management, workload identity หรือ hardening สำหรับการ deploy นอกเครื่อง assessment
